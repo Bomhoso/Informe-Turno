@@ -36,11 +36,13 @@ button.x{background:transparent;color:var(--rojo);padding:6px 10px;font-size:20p
 .bar button{flex:1}
 .bar .go{background:var(--verde);flex:2;font-size:17px}
 .msg{font-size:13px;margin-top:8px}
+select{appearance:auto}
+.otro{margin-top:6px;display:none}
 .warn{color:var(--rojo)}
 </style>
 </head>
 <body>
-<header><h1>Informe de Turno</h1><small>Bomhoso · Planta Horcones</small></header>
+<header><h1>Informe de Turno</h1><small>Bomhoso · Planta Horcones · v23-nov listas</small></header>
 <main>
 
 <section>
@@ -50,10 +52,7 @@ button.x{background:transparent;color:var(--rojo);padding:6px 10px;font-size:20p
     <div><label>Turno</label><select id="turno"><option value="dia">Día 08:00–20:00</option><option value="noche">Noche 20:00–08:00</option></select></div>
   </div>
   <label>Locomotora</label><input id="loco" inputmode="numeric" placeholder="1002">
-  <label>Encargado CCT</label><input id="p_cct">
-  <label>Maquinista</label><input id="p_maq">
-  <label>Ayudante</label><input id="p_ayu">
-  <label>Supervisor</label><input id="p_sup" value="Raúl González">
+  <div id="personal"></div>
 </section>
 
 <section>
@@ -522,6 +521,49 @@ const pad=n=>String(n).padStart(2,"0");
 const ahora=()=>{const d=new Date();return pad(d.getHours())+":"+pad(d.getMinutes())};
 const hoy=()=>{const d=new Date();return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())};
 
+/* ---------- Personal (listas desplegables) ---------- */
+const LISTAS={
+  p_cct:{t:"Encargado CCT",n:["Christopher Matus","Franklin Navarrete","José Cartes","Mauricio Fernández","Daniel Peña","Sergio Rojas","Freddy Carrasco"]},
+  p_maq:{t:"Maquinista",n:["Luis Bravo","Luis Farías"]},
+  p_ayu:{t:"Ayudante",n:["Cristián Velázquez","George Palma"]},
+  p_sup:{t:"Supervisor",n:["Raúl González","René Tiznado"]}
+};
+function extras(){try{return JSON.parse(localStorage.getItem("nombresExtra")||"{}")}catch(e){return {}}}
+function guardarExtra(id,nombre){
+  try{const x=extras();x[id]=x[id]||[];if(!x[id].includes(nombre)&&!LISTAS[id].n.includes(nombre)){x[id].push(nombre);localStorage.setItem("nombresExtra",JSON.stringify(x))}}catch(e){}
+}
+function opciones(id){const x=extras()[id]||[];return [...LISTAS[id].n,...x.slice().sort((a,b)=>a.localeCompare(b,"es"))]}
+function pintarPersonal(){
+  $("personal").innerHTML=Object.keys(LISTAS).map(id=>`
+    <label>${LISTAS[id].t}</label>
+    <select id="sel_${id}" data-p="${id}"><option value="">— elegir —</option>${opciones(id).map(n=>`<option>${esc(n)}</option>`).join("")}<option value="__otro__">✏️ Otro (escribir)…</option></select>
+    <input class="otro" id="${id}" placeholder="Escribe nombre y apellido">`).join("");
+  Object.keys(LISTAS).forEach(id=>{
+    $("sel_"+id).onchange=e=>{
+      const v=e.target.value,inp=$(id);
+      if(v==="__otro__"){inp.style.display="block";inp.value="";inp.focus()}
+      else{inp.style.display="none";inp.value=v}
+      guardar();
+    };
+    $(id).onchange=()=>{
+      const v=$(id).value.trim();
+      if(!v)return;
+      guardarExtra(id,v);
+      const keep=Object.fromEntries(Object.keys(LISTAS).map(k=>[k,$(k).value]));
+      pintarPersonal();Object.keys(keep).forEach(k=>$(k).value=keep[k]);sincronizarSelects();guardar();
+    };
+  });
+}
+function sincronizarSelects(){
+  Object.keys(LISTAS).forEach(id=>{
+    const v=$(id).value,sel=$("sel_"+id);
+    if(!v){sel.value="";$(id).style.display="none";return}
+    const existe=[...sel.options].some(o=>o.value===v||o.text===v);
+    if(existe){sel.value=v;$(id).style.display="none"}
+    else{sel.value="__otro__";$(id).style.display="block"}
+  });
+}
+
 /* ---------- Estado ---------- */
 let S={man:[],nov:[],det:[],fotoIni:null,fotoFin:null};
 function guardar(){try{leerCampos();localStorage.setItem("informeTurno",JSON.stringify(S))}catch(e){}}
@@ -644,7 +686,7 @@ $("btnNuevo").onclick=()=>{
   if(!confirm("¿Empezar un informe nuevo? Se borra el actual."))return;
   const keep={p_cct:"",p_maq:"",p_ayu:"",p_sup:$("p_sup").value,loco:$("loco").value};
   S={man:[],nov:[],det:[],fotoIni:null,fotoFin:null,fecha:hoy(),turno:autoTurno(),...keep,coment:"",h_ini:"",h_fin:""};
-  pintarCampos();pintarTodo();$("v_ini").removeAttribute("src");$("v_fin").removeAttribute("src");guardar();scrollTo(0,0);
+  pintarCampos();sincronizarSelects();pintarTodo();$("v_ini").removeAttribute("src");$("v_fin").removeAttribute("src");guardar();scrollTo(0,0);
 };
 function autoTurno(){const h=new Date().getHours();return(h>=8&&h<20)?"dia":"noche"}
 
@@ -742,7 +784,7 @@ window.__construirPDF=construirPDF; // para pruebas
 cargar();
 if(!S.fecha)S.fecha=hoy();
 if(!S.turno)S.turno=autoTurno();
-pintarCampos();pintarTodo();
+pintarPersonal();pintarCampos();sincronizarSelects();pintarTodo();
 if(S.fotoIni)$("v_ini").src=S.fotoIni.url;
 if(S.fotoFin)$("v_fin").src=S.fotoFin.url;
 $("soporte").textContent=SR?"":"Tu navegador no ofrece dictado dentro de la app: usa el micrófono del teclado de Android en los cuadros de texto.";
